@@ -2,7 +2,7 @@ from tree_sitter import Language, Parser
 from ai_code_reviewer_logger import logger
 from ai_module import DeepSeek
 from github_assistant import GithubAssistant
-from exception import LogInitError, EnvironmentVariableNotFound
+from exception import LogError, EnvironmentVariableError, AiCodeReviewerException
 import tree_sitter_cpp
 import tree_sitter_python
 import json
@@ -11,18 +11,44 @@ import os
 import asyncio
 
 
+# 获取代码内容
+def read_file(file_path, mode="read"):
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            if mode == "read":
+                return file.read()
+            elif mode == "lines":
+                return (line for line in file)  # 生成器减少内存占用
+    except FileNotFoundError:
+        raise FileNotFoundError(f"文件不存在: {file_path}")
+    except PermissionError:
+        raise PermissionError(f"无权限访问文件: {file_path}")
+    except UnicodeDecodeError as e:
+        raise ValueError(f"文件编码错误: {e}") from e
+
+
 class CppCodeAnalyzer:
     def __init__(self, pull_request_id):
         # 校验日志模块是否正常启动
         if logger == None:
-            raise LogInitError()
+            raise LogError(2)
 
+        # 配置文件检查   
+        def environment_variable_check(self, variable):
+            if variable is str:
+                value = os.environ.get(variable)
+                if value is None:
+                    raise EnvironmentVariableError(f"环境变量{variable}未设置", 3)
+                return value
+            else:
+                raise AiCodeReviewerException(f"变量类型错误", 4)
+        
         # llm_api_key 和 github_token 需要从环境变量中拿取
-        llm_api_key = self.environment_variable_check("LLM_API_KEY")
-        llm_api_url = self.environment_variable_check("LLM_API_URL")
-        github_token = self.environment_variable_check("GITHUB_TOKEN")
-        repository_name = self.environment_variable_check("REPOSITORY_NAME")
-        repository_owner = self.environment_variable_check("REPOSITORY_OWNER")
+        llm_api_key = environment_variable_check("LLM_API_KEY")
+        llm_api_url = environment_variable_check("LLM_API_URL")
+        github_token = environment_variable_check("GITHUB_TOKEN")
+        repository_name = environment_variable_check("REPOSITORY_NAME")
+        repository_owner = environment_variable_check("REPOSITORY_OWNER")
         
         # 初始化ai模型(目前只支持deepseek)
         self.ai_module = DeepSeek(llm_api_url, llm_api_key)
@@ -32,27 +58,26 @@ class CppCodeAnalyzer:
                                                 repository_owner, 
                                                 repository_name, pull_request_id)
 
-        self.cpp_parser = Parser(Language(tree_sitter_cpp.language()))
-        self.py_parser = Parser(Language(tree_sitter_python.language()))
+        self._cpp_parser = None
+        self._py_parser = None
         self.code_lines = []
-        
-    def __del__(self):
-        logger.info("程序退出")
-        
-    # 配置文件检查   
-    def environment_variable_check(self, variable):
-        value = os.environ.get(variable)
-        if value == None:
-            raise EnvironmentVariableNotFound(f"环境变量{variable}未设置")
-        return value
+
+    
+    @property
+    def cpp_parser(self) -> Parser:
+        if not self._cpp_parser:
+            self._cpp_parser = Parser(Language(tree_sitter_cpp.language()))
+        return self._cpp_parser
+
+    
+    @property
+    def py_parser(self) -> Parser:
+        if not self._py_parser:
+            self._py_parser = Parser(Language(tree_sitter_python.language()))
+        return self._py_parser
         
     
-    # 获取代码内容
-    def read_file(self, file_path):
-        with open(file_path, 'r', encoding='utf-8') as file:
-            content = file.read()
-            file.close()
-        return content
+    
 
 
     async def find_functions(self, node, lines, file_name):
@@ -111,14 +136,14 @@ class CppCodeAnalyzer:
             file_name = diff_file_struct.file_name
             if file_name.endswith(".cpp") or file_name.endswith(".h") or file_name.endswith(".hpp") or file_name.endswith(".tpp"):
                 # 解析 C++ 代码
-                cpp_code = self.read_file(diff_file_struct.file_name)
+                cpp_code = read_file(diff_file_struct.file_name)
                 tree = self.cpp_parser.parse(bytes(cpp_code, "utf8"))
                 # 获取根节点
                 root_node = tree.root_node
                 # 开始遍历 AST
                 await self.find_functions(root_node, diff_file_struct.diff_position, diff_file_struct.file_name)
             elif file_name.endswith(".py"):
-                py_code = self.read_file(diff_file_struct.file_name)
+                py_code = read_file(diff_file_struct.file_name)
                 tree = self.py_parser.parse(bytes(py_code, "utf8"))         
                 # 获取根节点
                 root_node = tree.root_node

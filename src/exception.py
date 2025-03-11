@@ -10,11 +10,12 @@ class AiCodeReviewerException(Exception):
         return f"[Error {self.error_code}]: {self.message}"
     
 
-class LogInitError(AiCodeReviewerException):
-    def __init__(self):
-        super().__init__(f"日志模块初始化错误",2)
+class LogError(AiCodeReviewerException):
+    def __init__(self, error_code):
+        if error_code == 2:
+            super().__init__(f"日志模块初始化错误",error_code)
         
 
-class EnvironmentVariableNotFound(AiCodeReviewerException):
-    def __init__(self, message):
-        super().__init__(message, 3)
+class EnvironmentVariableError(AiCodeReviewerException):
+    def __init__(self, message, error_code):
+        super().__init__(message, error_code)

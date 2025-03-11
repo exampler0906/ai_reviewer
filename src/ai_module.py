@@ -19,7 +19,7 @@ class DeepSeek:
             "messages": [{"role": "user", "content": prompt}]
         }
 
-        async with httpx.AsyncClient(trust_env=False, proxy=None, timeout=300) as client:
+        async with httpx.AsyncClient(trust_env=False, proxy=None, timeout=1000) as client:
             response = await client.post(self.api_url, json=payload, headers=headers)
             response_json = response.json()
         return response_json
