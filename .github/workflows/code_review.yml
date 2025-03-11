@@ -39,3 +39,4 @@ jobs:
         run: |
           cd src
           python ai_code_reviewer.py ${{ github.event.pull_request.number }}
+          cat app.log
