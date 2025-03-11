@@ -33,6 +33,9 @@ jobs:
           pip install -r requirements.txt
 
       - name: Code Review
+        env:
+            LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+            GITHUB_TOKEN: ${{ secrets.THIS_GITHUB_TOKEN }}
         run: |
           cd src
           python ai_code_reviewer.py ${{ github.event.pull_request.number }}
