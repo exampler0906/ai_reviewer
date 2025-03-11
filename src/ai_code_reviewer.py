@@ -34,7 +34,7 @@ class CppCodeAnalyzer:
             raise LogError(2)
 
         # 配置文件检查   
-        def environment_variable_check(self, variable):
+        def environment_variable_check(variable):
             if variable is str:
                 value = os.environ.get(variable)
                 if value is None:
