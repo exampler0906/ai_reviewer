@@ -47,7 +47,11 @@ class GithubAssistant:
 
     # 发送评论
     def add_comment(self, filename, position, comment_text):
-
+        
+        # 文件路径需要重新处理
+        repository_name = os.environ.get("REPOSITORY_NAME")
+        real_file_name = filename.replace(f"../../{repository_name}/", "", 1)
+        
         # 获取 PR 的 commit ID
         headers = {
             "Authorization": f"token {self.github_token}",
@@ -61,9 +65,10 @@ class GithubAssistant:
         payload = {
             "body": comment_text,
             "commit_id": COMMIT_ID,  # PR 的最新 commit SHA (需提前获取)
-            "path": filename,
+            "path": real_file_name,
             "position": position
         }
+        
         response = requests.post(comment_url, headers=headers, json=payload)
         logger.debug(f"Add Comment Response:{response.json()}")
         return response.json()

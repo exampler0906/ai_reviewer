@@ -21,38 +21,32 @@ class CppCodeAnalyzer:
             exit(-1)
 
         # llm_api_key 和 github_token 需要从环境变量中拿取
-        llm_api_key = os.environ.get("LLM_API_KEY")
-        github_token = os.environ.get("GITHUB_TOKEN")
-        if llm_api_key == None or github_token == None:
-            logger.error("环境变量LLM_API_KEY或者GITHUB_TOKEN未设置")
-            exit(-1)
-        
-        # 配置文件检查
-        self.configure_check(configure, "llm_api_url")
-        self.configure_check(configure, "repository_owner")
-        self.configure_check(configure, "repository_name")
-        
-        # 将仓库名称设置为环境变量，方便后续使用
-        os.environ["REPOSITORY_NAME"] = configure["repository_name"]
+        llm_api_key = self.enviroment_variable_check("LLM_API_KEY")
+        llm_api_url = self.enviroment_variable_check("LLM_API_URL")
+        github_token = self.enviroment_variable_check("GITHUB_TOKEN")
+        repository_name = self.enviroment_variable_check("REPOSITORY_NAME")
+        repository_owner = self.enviroment_variable_check("REPOSITORY_OWNER")
         
         # 初始化ai模型(目前只支持deepseek)
-        self.ai_module = DeepSeek(configure["llm_api_url"], llm_api_key)
-        
+        self.ai_module = DeepSeek(llm_api_url, llm_api_key)
         
         # 初始化github assistant
         self.github_assistant = GithubAssistant(github_token, 
-                                                configure["repository_owner"], 
-                                                configure["repository_name"], pull_request_id)
+                                                repository_owner, 
+                                                repository_name, pull_request_id)
 
         self.cpp_parser = Parser(Language(tree_sitter_cpp.language()))
         self.py_parser = Parser(Language(tree_sitter_python.language()))
         self.code_lines = []
         
     # 配置文件检查   
-    def configure_check(self, json, key):
-        if not key in json:
-            logger.error(f"配置文件缺少关键字:{key}")
+    def enviroment_variable_check(self, key):
+        value = os.environ.get(key)
+        if value == None:
+            logger.error(f"环境变量{key}未设置")
             exit(-1)
+        return value
+        
     
     # 获取代码内容
     def read_file(self, file_path):

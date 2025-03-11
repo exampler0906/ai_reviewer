@@ -35,7 +35,10 @@ jobs:
       - name: Code Review
         env:
             LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+            LLM_API_URL: ${{ secrets.LLM_API_URL }}
             GITHUB_TOKEN: ${{ secrets.THIS_GITHUB_TOKEN }}
+            REPOSITORY_NAME: ${{ secrets.REPOSITORY_NAME }}
+            REPOSITORY_OWNER: ${{ secrets.REPOSITORY_OWNER }}
         run: |
           cd src
           python ai_code_reviewer.py ${{ github.event.pull_request.number }}
