@@ -35,7 +35,7 @@ class CppCodeAnalyzer:
 
         # 配置文件检查   
         def environment_variable_check(variable):
-            if variable is str:
+            if isinstance(variable, str):
                 value = os.environ.get(variable)
                 if value is None:
                     raise EnvironmentVariableError(f"环境变量{variable}未设置", 3)
