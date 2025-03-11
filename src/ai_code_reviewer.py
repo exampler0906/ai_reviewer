@@ -2,6 +2,7 @@ from tree_sitter import Language, Parser
 from ai_code_reviewer_logger import logger
 from ai_module import DeepSeek
 from github_assistant import GithubAssistant
+from exception import LogInitError, EnvironmentVariableNotFound
 import tree_sitter_cpp
 import tree_sitter_python
 import json
@@ -12,20 +13,16 @@ import asyncio
 
 class CppCodeAnalyzer:
     def __init__(self, pull_request_id):
-        #加载配置文件
-        try:
-            with open("../configure.json", "r", encoding="utf-8") as file:
-                configure = json.load(file)
-        except Exception as e:
-            logger.error(f"严重错误:{e}")
-            exit(-1)
+        # 校验日志模块是否正常启动
+        if logger == None:
+            raise LogInitError()
 
         # llm_api_key 和 github_token 需要从环境变量中拿取
-        llm_api_key = self.enviroment_variable_check("LLM_API_KEY")
-        llm_api_url = self.enviroment_variable_check("LLM_API_URL")
-        github_token = self.enviroment_variable_check("GITHUB_TOKEN")
-        repository_name = self.enviroment_variable_check("REPOSITORY_NAME")
-        repository_owner = self.enviroment_variable_check("REPOSITORY_OWNER")
+        llm_api_key = self.environment_variable_check("LLM_API_KEY")
+        llm_api_url = self.environment_variable_check("LLM_API_URL")
+        github_token = self.environment_variable_check("GITHUB_TOKEN")
+        repository_name = self.environment_variable_check("REPOSITORY_NAME")
+        repository_owner = self.environment_variable_check("REPOSITORY_OWNER")
         
         # 初始化ai模型(目前只支持deepseek)
         self.ai_module = DeepSeek(llm_api_url, llm_api_key)
@@ -39,12 +36,14 @@ class CppCodeAnalyzer:
         self.py_parser = Parser(Language(tree_sitter_python.language()))
         self.code_lines = []
         
+    def __del__(self):
+        logger.info("程序退出")
+        
     # 配置文件检查   
-    def enviroment_variable_check(self, key):
-        value = os.environ.get(key)
+    def environment_variable_check(self, variable):
+        value = os.environ.get(variable)
         if value == None:
-            logger.error(f"环境变量{key}未设置")
-            exit(-1)
+            raise EnvironmentVariableNotFound(f"环境变量{variable}未设置")
         return value
         
     
@@ -52,6 +51,7 @@ class CppCodeAnalyzer:
     def read_file(self, file_path):
         with open(file_path, 'r', encoding='utf-8') as file:
             content = file.read()
+            file.close()
         return content
 
 

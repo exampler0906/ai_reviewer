@@ -29,8 +29,8 @@ class DeepSeek:
         #主函数，调用 DeepSeek 并输出结果
         code_content =  """你是一名经验丰富的计算机工程师，请从专业的角度，对以下代码进行review，对于不完善的地方，请提出针对性的优化建议。
                             在给出意见时请保持语言的简洁，并对内存泄漏、性能优化、错误处理三个方面进行重点检查。
-                            另外，提交给你的函数都是一个独立的个体，无需进行关联推导，比如需要补充其他函数诸等内容。
-                            最后，请在最后不要进行总结，也不用给出完整代码：\n""" + code_content
+                            另外，提交给你的函数都是一个独立的个体，无需进行关联推导。
+                            最后，根据你的修改建议给出一个完整的示例代码\n""" + code_content
         
         logger.debug(f"Request content:{code_content}")
         response = await self.call_deepseek_async(code_content)
