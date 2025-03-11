@@ -14,7 +14,7 @@ class CppCodeAnalyzer:
     def __init__(self, pull_request_id):
         #加载配置文件
         try:
-            with open("configure.json", "r", encoding="utf-8") as file:
+            with open("../configure.json", "r", encoding="utf-8") as file:
                 configure = json.load(file)
         except Exception as e:
             logger.error(f"严重错误:{e}")
