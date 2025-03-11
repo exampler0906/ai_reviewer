@@ -1,5 +1,5 @@
 {
     "llm_api_url":"https://ark.cn-beijing.volces.com/api/v3/chat/completions", 
     "repository_owner":"exampler0906",
-    "repository_name":"viewer_auto_test"
+    "repository_name":"ai_reviewer"
 }
