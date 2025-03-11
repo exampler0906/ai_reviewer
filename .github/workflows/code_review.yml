@@ -1,0 +1,22 @@
+name: Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]  # 触发条件：PR 创建/更新/重新打开
+
+jobs:
+  code_review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}  # 获取 PR 的源分支
+
+      # 2️⃣ 打印 Pull Request ID
+      - name: Print Pull Request ID
+        run: | 
+          echo "Pull Request ID: ${{ github.event.pull_request.number }}"
+          pwd
+          python --version
