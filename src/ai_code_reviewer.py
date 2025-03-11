@@ -32,6 +32,8 @@ class CppCodeAnalyzer:
         self.configure_check(configure, "repository_owner")
         self.configure_check(configure, "repository_name")
         
+        # 将仓库名称设置为环境变量，方便后续使用
+        os.environ["REPOSITORY_NAME"] = configure["repository_name"]
         
         # 初始化ai模型(目前只支持deepseek)
         self.ai_module = DeepSeek(configure["llm_api_url"], llm_api_key)

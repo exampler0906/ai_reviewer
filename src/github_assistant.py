@@ -1,4 +1,5 @@
 import requests
+import os
 from ai_code_reviewer_logger import logger
 from dataclasses import dataclass
 
@@ -75,6 +76,7 @@ class GithubAssistant:
         
         for file in files:
             filename = file["filename"]
+            filename = f"../../{os.environ.get("GITHUB_TOKEN")}/{filename}"
             patch = file.get("patch", "")
             positions = self.get_comment_positions(patch)
 
