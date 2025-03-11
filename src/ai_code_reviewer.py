@@ -41,7 +41,8 @@ class CppCodeAnalyzer:
                     raise EnvironmentVariableError(f"环境变量{variable}未设置", 3)
                 return value
             else:
-                raise AiCodeReviewerException(f"变量类型错误", 4)
+                error_type = type(variable)
+                raise AiCodeReviewerException(f"变量类型错误:{error_type}", 4)
         
         # llm_api_key 和 github_token 需要从环境变量中拿取
         llm_api_key = environment_variable_check("LLM_API_KEY")
