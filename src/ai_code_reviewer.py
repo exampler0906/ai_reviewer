@@ -45,7 +45,7 @@ class CppCodeAnalyzer:
                                                 configure["repository_name"], pull_request_id)
 
         self.cpp_parser = Parser(Language(tree_sitter_cpp.language()))
-        self.py_parserc = Parser(Language(tree_sitter_python.language()))
+        self.py_parser = Parser(Language(tree_sitter_python.language()))
         self.code_lines = []
         
     # 配置文件检查   
