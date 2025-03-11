@@ -73,10 +73,11 @@ class GithubAssistant:
         # 遍历所有文件并添加评论
         files = self.get_pr_change_files()
         diff_file_struct_list = []
+        repository_name = os.environ.get("REPOSITORY_NAME")
         
         for file in files:
             filename = file["filename"]
-            filename = f"../../{os.environ.get("GITHUB_TOKEN")}/{filename}"
+            filename = f"../../{repository_name}/{filename}"
             patch = file.get("patch", "")
             positions = self.get_comment_positions(patch)
 
