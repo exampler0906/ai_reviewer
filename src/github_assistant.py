@@ -1,7 +1,8 @@
 import requests
-import os
 import json
 import re
+import urllib.parse
+import common_function
 from ai_code_reviewer_logger import logger
 from dataclasses import dataclass
 from enum import Enum
@@ -13,12 +14,10 @@ class DiffFileStruct:
     diff_position: list
 
 
-class RequestMethode(Enum):
-    GET = 1
-    POST = 2
-
-
 class GithubAssistant:
+    
+    hunk_header_re = re.compile(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@')
+    
     def __init__(
         self,
         github_token: str,
@@ -26,20 +25,17 @@ class GithubAssistant:
         repository_name: str,
         pull_request_id: int
     ):
-        # 参数类型校验
-        if not isinstance(github_token, str) or not github_token.strip():
-            raise ValueError("github_token must be a non-empty string")
-        if not isinstance(repository_owner, str) or not repository_owner:
-            raise ValueError("repository_owner must be a non-empty string")
-        if not isinstance(repository_name, str) or not repository_name:
-            raise ValueError("repository_name must be a non-empty string")
-        if not isinstance(pull_request_id, int) or pull_request_id <= 0:
-            raise ValueError("pull_request_id must be a positive integer")
+        common_function.parameter_check(github_token, "github token")
+        common_function.parameter_check(repository_owner, "repository owner")
+        common_function.parameter_check(repository_name, "repository name")
+        common_function.parameter_check(pull_request_id, "pull request id")
+        
+        common_function.log_init_check()
 
         # 敏感数据设为私有属性
         self._github_token = github_token  
-        self.owner = repository_owner
-        self.repo = repository_name
+        self.owner = urllib.parse.quote(repository_owner, safe="") # 防止url注入
+        self.repo = urllib.parse.quote(repository_name, safe="")
         self.pull_request_id = pull_request_id
         
         # 设置github api 请求头
@@ -51,10 +47,8 @@ class GithubAssistant:
         self.pr_base_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{self.pull_request_id}"
         
         # 获取 commit SHA
-        response_json =  self.call_github_api(RequestMethode.GET, self.pr_base_url)
-        if "head" not in response_json or "sha" not in response_json["head"]:
-            raise KeyError("Missing commit SHA in PR data")
-        self.commit_sha = response_json["head"]["sha"]
+        
+        self._commit_sha = None
     
         logger.info("Init github assistant success")
     
@@ -64,51 +58,61 @@ class GithubAssistant:
     # 对token进行保护
     @property
     def github_token(self) -> str:
-        return f"****{self._github_token[-4:]}" if self._github_token else ""
+        if len(self._github_token) > 10:
+            return f"****{self._github_token[-4:]}" if self._github_token else None
+        return None
+        
 
 
-    def call_github_api(self, request_method:RequestMethode, url:str, payload:dict = {}) -> any:
-        response = None
+    # 懒加载，需要时再获取
+    @property
+    def commit_sha(self) -> str | None:
+        if self._commit_sha is None:
+            response_json =  self.call_github_api("GET", self.pr_base_url)
+            if "head" not in response_json or "sha" not in response_json["head"]:
+                raise KeyError("Missing commit SHA in PR data")
+            self._commit_sha = response_json["head"]["sha"]
+        
+        return self._commit_sha
+
+
+    def call_github_api(self, request_method:str, url:str, payload:dict = None) -> any:
         try:
-            # 分页是考虑到可能应答内容过多
-            if request_method == RequestMethode.GET:
-                response = requests.get(url, headers=self.headers, timeout=10, params={'per_page': 100})
-            elif request_method == RequestMethode.POST:
-                response = requests.post(url, headers=self.headers, timeout=10, params={'per_page': 100}, json=payload)
-            
-            response.raise_for_status()  # 自动触发HTTPError
-            response_json = response.json()
-            logger.debug(f"API success response:{response_json}")
-            return response_json
+            with requests.request(request_method, url, headers=self.headers, timeout=10, params={'per_page': 100}, json=payload) as response:
+                response.raise_for_status()  # 自动触发HTTPError
+                response_json = response.json()
+                logger.debug(f"API success response:{response_json}")
+                return response_json
         except requests.exceptions.RequestException as e:
-            logger.error(f"API request failed: {str(e)}")
+            logger.exception(f"API request failed: {str(e)}")
             raise
-        except json.JSONDecodeError:
-            logger.error("Failed to parse response JSON")
+        except requests.exceptions.JSONDecodeError:
+            logger.exception("Failed to parse response JSON")
             raise
-        finally:
-            if response:
-                response.close()  # 显式释放连接资源
+        
     
-     
+    # FIXME: 暂时不考虑分页
     def get_pr_change_files(self):
-        url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{self.pull_request_id}/files"
-        return self.call_github_api(RequestMethode.GET, url)
+        url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{self.pull_request_id}/files?per_page=100" # 目前最大支持单次100个文件的修改
+        return self.call_github_api("GET", url)
 
     
     # FIXME:这个函数需要进一步测试其准确性
     def get_comment_positions(self, patch):
         positions = []
         patch_lines = patch.split("\n")
-        hunk_header_re = re.compile(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@')
+        
         current_new_line = None
 
         for line in patch_lines:
             if line.startswith('@@'):
-                match = hunk_header_re.match(line)
-                current_new_line = int(match.group(2)) if match else None
+                match = self.hunk_header_re.match(line)
+                try:
+                    current_new_line = int(match.group(2)) if match else logger.error("Hunk header analyze failed:{line}")
+                except ValueError as e:
+                    logger.expection("Value error:{e}")
                 continue  # 跳过块头处理
-
+            
             if current_new_line is None:
                 continue  # 忽略无效块后的行
 
@@ -136,7 +140,7 @@ class GithubAssistant:
             "path": filename,
             "position": max(position, 1) # 行数至少为1
         }
-        self.call_github_api(RequestMethode.POST, comment_url, payload)
+        self.call_github_api("POST", comment_url, payload)
 
     
     def get_diff_file_structs(self):
@@ -147,10 +151,11 @@ class GithubAssistant:
         diff_file_struct_list = []
         
         for file in files:
-            filename = file["filename"]
-            filepath = f"../../{self.repo}/{filename}"
-            patch = file.get("patch", "")
-            positions = self.get_comment_positions(patch)
-            diff_file_struct_list.append(DiffFileStruct(filename, filepath, positions)) 
+            if "filename" in file:
+                filename = file.get("filename")
+                filepath = f"../../{self.repo}/{filename}"
+                patch = file.get("patch", "")
+                positions = self.get_comment_positions(patch)
+                diff_file_struct_list.append(DiffFileStruct(filename, filepath, positions)) 
 
         return diff_file_struct_list

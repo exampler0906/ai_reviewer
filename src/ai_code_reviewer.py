@@ -1,17 +1,19 @@
-from tree_sitter import Language, Parser
-from ai_code_reviewer_logger import logger
-from ai_module import DeepSeek
-from github_assistant import GithubAssistant
-from typing import Optional
 import tree_sitter_cpp
 import tree_sitter_python
+import tree_sitter_java
 import argparse
 import os
 import asyncio
 import bisect
 import aiofiles
-import sys
-
+import re
+import common_function
+import threading
+from tree_sitter import Language, Parser
+from ai_code_reviewer_logger import logger
+from ai_module import DeepSeek
+from github_assistant import GithubAssistant
+from typing import Optional
 
 class CppCodeAnalyzer:
     
@@ -24,6 +26,15 @@ class CppCodeAnalyzer:
         "PROMPT_LEVER"
     )
     
+    # 待匹配的++文件的文件拓展名
+    cpp_extensions = re.compile(r".*\.(cpp|hpp|h|tpp|cxx)$")
+    python_extensions = re.compile(r".*\.py$")
+    java_extensions = re.compile(r".*\.java$")
+    
+    lock = threading.Lock()
+    
+    semaphore = asyncio.Semaphore(os.cpu_count())
+    
     def __init__(self, pull_request_id: int):
         
         # 批量校验环境变量
@@ -32,9 +43,7 @@ class CppCodeAnalyzer:
         if missing_vars:
             raise RuntimeError(f":Missing environment variables: {', '.join(missing_vars)}")
         
-        # 校验日志模块是否正常启动
-        if not hasattr(logger, 'info'):
-            raise RuntimeError(f":log init error")
+        common_function.log_init_check()
         
         # llm_api_key 和 github_token 需要从环境变量中拿取
         llm_api_key = os.environ.get("LLM_API_KEY")
@@ -52,50 +61,56 @@ class CppCodeAnalyzer:
                                                     repository_owner, 
                                                     repository_name, pull_request_id)
         except Exception as e:
-            logger.error(f"Init ai_code_reviewer failed: {e}")
+            logger.exception(f"Init ai_code_reviewer failed: {e}")
             raise
         
         # c++ 解析器
         self._cpp_parser = None
         # python 解析器
         self._py_parser = None
-        # 待匹配的代码行
-        self.code_lines = []
-        # 待匹配的++文件的文件拓展名
-        self.cpp_extensions = ('.cpp', '.h', '.hpp', '.tpp')
-        
+        # java 解析器
+        self._java_parser = None
         logger.info("Init ai_code_reviewer success")
 
     
     @property
     def cpp_parser(self) -> Parser:
-        try:
-            if self._cpp_parser is None:
-                self._cpp_parser = Parser(Language(tree_sitter_cpp.language()))
-            return self._cpp_parser
-        except Exception as e:
-            raise RuntimeError("Failed to initialize C++ parser") from e
+        if self._cpp_parser is None:
+            try:
+                with self.lock: # 多线程安全
+                    self._cpp_parser = Parser(Language(tree_sitter_cpp.language()))
+            except Exception as e:
+                raise RuntimeError("Failed to initialize C++ parser:{e}") from e
+        return self._cpp_parser
     
     @property
     def py_parser(self) -> Parser:
-        try:
-            if self._py_parser is None:
-                self._py_parser = Parser(Language(tree_sitter_python.language()))
-            return self._py_parser
-        except Exception as e:
-            raise RuntimeError("Failed to initialize C++ parser") from e
+        if self._py_parser is None:
+            try:
+                with self.lock:
+                    self._py_parser = Parser(Language(tree_sitter_python.language()))
+            except Exception as e:
+                raise RuntimeError("Failed to initialize Python parser:{e}") from e
+        return self._py_parser
 
+    
+    @property
+    def java_parser(self) -> Parser:
+        if self._java_parser is None:
+            try:
+                with self.lock:
+                    self._java_parser = Parser(Language(tree_sitter_java.language()))
+            except Exception as e:
+                raise RuntimeError("Failed to initialize JAVA parser:{e}") from e
+        return self._java_parser
+    
     
     async def close(self):
         # 实现资源释放逻辑
-        await self.ai_module.close()
-        await self.github_assistant.close()
+        await asyncio.gather(self.ai_module.close(), self.github_assistant.close())
     
     
     async def analyze_functions(self, node, lines, file_name):
-        # 获取文件变更列表行数，方便后续滤重
-        self.code_lines = lines
-        self.code_lines.sort()
 
         # 检查当前节点是否为函数定义
         if node.type == "function_definition":
@@ -115,15 +130,15 @@ class CppCodeAnalyzer:
                     response = await self.ai_module.call_ai_model(function_body)
                     self.github_assistant.add_comment(file_name, func_start_line, response)
                 except Exception as e:
-                    logger.error(f"AI processing failed: {e}")
+                    logger.exception(f"AI processing failed: {e}")
                     raise
 
             # 批量移除已处理行（维护有序性）
-            self.code_lines = self.code_lines[:left] + self.code_lines[right:]
+            new_lines= lines[:left] + lines[right:]
                 
         # 递归地遍历子节点
         for child in node.children:
-            await self.analyze_functions(child, lines, file_name)
+            await self.analyze_functions(child, new_lines, file_name)
     
 
     # FIXME: 提取逻辑可能需要优化
@@ -147,41 +162,46 @@ class CppCodeAnalyzer:
 
     
     async def analyze(self, diff_file_struct):
-        # 进行文件过滤
-            file_name = diff_file_struct.file_name
-            if file_name.endswith(self.cpp_extensions):
-                parser = self.cpp_parser
-            elif file_name.endswith('.py'):
-                parser = self.py_parser
-            else:
-                return
-            
-            # 统一处理逻辑
+        async with self.semaphore:
             try:
-                logger.info(f"Start review file:{file_name}")
+                # 进行文件过滤
+                file_name = diff_file_struct.file_name
+                if self.cpp_extensions.match(file_name):
+                    parser = self.cpp_parser
+                elif self.py_extensions.match(file_name):
+                    parser = self.py_parser
+                elif self.java_extensions.match(file_name):
+                    parser = self.java_parser
+                else:
+                    return
                 
-                # 异步读取文件
-                async with aiofiles.open(diff_file_struct.file_path, 'r') as f:
-                    code = await f.read()
-                
-                # 语法树解析
-                tree = parser.parse(bytes(code, 'utf-8'))
-                root_node = tree.root_node
-                
-                # AST遍历
-                await self.analyze_functions(
-                    root_node, 
-                    diff_file_struct.diff_position,
-                    file_name
-                )
-                
-            except IOError as e:
-                logger.error(f"File read error:{file_name} - {str(e)}")
-            except ValueError as e:
-                logger.error(f"Parsing error{file_name} - {str(e)}")
+                # 统一处理逻辑
+                try:
+                    logger.info(f"Start review file:{file_name}")
+                    
+                    # 异步读取文件
+                    async with aiofiles.open(diff_file_struct.file_path, 'r') as f:
+                        code = await f.read()
+                    
+                    # 语法树解析
+                    tree = parser.parse(bytes(code, 'utf-8'))
+                    root_node = tree.root_node
+                    
+                    # AST遍历
+                    lines = diff_file_struct.diff_position
+                    lines.sort()
+                    await self.analyze_functions(
+                        root_node, 
+                        lines,
+                        file_name
+                    )
+                    
+                except IOError as e:
+                    logger.exception(f"File read error:{file_name} - {str(e)}")
+                except ValueError as e:
+                    logger.exception(f"Parsing error{file_name} - {str(e)}")                    
             except Exception as e:
-                logger.error(f"Unknow error: {file_name} - {str(e)}")
-    
+                logger.exception(f"Unknow error: {file_name} - {str(e)}")
     
     
     async def analyze_code(self, diff_file_struct_list):
@@ -196,20 +216,21 @@ async def async_main(pull_request_id: int):
             logger.warn(f"No files available for review")
             return
         await analyzer.analyze_code(diff_files)
+    except Exception as e:
+        logger.exception(f"Unknow error: {e}")
+        raise
     finally:
-        # 实现资源回收的逻辑代
-        logger.info(f"review complete")
         await analyzer.close()
         
 
-def validate_args(args) -> Optional[int]:
-    try:
+def validate_args(args) -> int:
+    
+    if hasattr(args, 'pull_request_id'):
         if args.pull_request_id <= 0:
-            raise ValueError("ID must be greater than 0")
+            raise ValueError("Pull request id must be greater than 0")
         return args.pull_request_id
-    except AttributeError:
-        logger.error("Error: Missing pull_request_id parameter")
-        raise 
+    else:
+        raise Exception("Error: Missing pull_request_id parameter")
 
         
 def main():
@@ -225,10 +246,10 @@ def main():
         asyncio.run(async_main(pr_id), debug=True)
         
     except (ValueError, argparse.ArgumentError) as e:
-        logger.error(f"parameter error: {str(e)}")
+        logger.exception(f"parameter error: {str(e)}")
         raise
     except Exception as e:
-        logger.error(f"processing error: {str(e)}")
+        logger.exception(f"processing error: {str(e)}")
         raise
 
 if __name__ == "__main__":
