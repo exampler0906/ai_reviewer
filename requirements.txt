@@ -4,4 +4,4 @@ tree-sitter-python==0.23.6
 structlog==25.1.0
 httpx==0.28.1
 requests==2.31.0
-iohttp==3.9.3
+aiohttp==3.9.3
