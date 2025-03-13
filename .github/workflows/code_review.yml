@@ -39,6 +39,7 @@ jobs:
             GITHUB_TOKEN: ${{ secrets.THIS_GITHUB_TOKEN }}
             REPOSITORY_NAME: ${{ secrets.REPOSITORY_NAME }}
             REPOSITORY_OWNER: ${{ secrets.REPOSITORY_OWNER }}
+            PROMPT_LEVER : ${{ secrets.PROMPT_LEVER }}
         run: |
           cd src
           python ai_code_reviewer.py ${{ github.event.pull_request.number }}
