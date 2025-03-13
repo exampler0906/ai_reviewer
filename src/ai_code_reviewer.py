@@ -13,32 +13,6 @@ import aiofiles
 import sys
 
 
-# 获取代码内容
-def read_file(file_path, mode="read"):
-    if mode not in ("read", "lines"):
-        raise ValueError(f"Invalid pattern: {mode} (supported: 'read'/'lines')")
-
-    try:
-        if mode == "read":
-            with open(file_path, "r", encoding="utf-8") as file:
-                return file.read()
-        
-        elif mode == "lines":
-            def line_generator():
-                with open(file_path, "r", encoding="utf-8") as file:
-                    yield from file
-            return line_generator()
-            
-    except FileNotFoundError as e:
-        raise FileNotFoundError("File not found: {file_path}") from e
-    except PermissionError as e:
-        raise PermissionError(f"No access permission: {file_path}") from e
-    except UnicodeDecodeError as e:
-        raise ValueError(f"Encoding error: {e}") from e
-    except IsADirectoryError as e:
-        raise IsADirectoryError(f"Path is a directory: {file_path}") from e
-
-
 class CppCodeAnalyzer:
     
     require_env_vars = (
@@ -46,7 +20,8 @@ class CppCodeAnalyzer:
         "LLM_API_URL",
         "GITHUB_TOKEN",
         "REPOSITORY_NAME",
-        "REPOSITORY_OWNER"
+        "REPOSITORY_OWNER",
+        "PROMPT_LEVER"
     )
     
     def __init__(self, pull_request_id: int):
@@ -68,18 +43,28 @@ class CppCodeAnalyzer:
         repository_name = os.environ.get("REPOSITORY_NAME")
         repository_owner = os.environ.get("REPOSITORY_OWNER")
         
-        # 初始化ai模型(目前只支持deepseek)
-        self.ai_module = DeepSeek(llm_api_url, llm_api_key)
+        try:
+            # 初始化ai模型(目前只支持deepseek)
+            self.ai_module = DeepSeek(llm_api_url, llm_api_key)
+            
+            # 初始化github assistant
+            self.github_assistant = GithubAssistant(github_token, 
+                                                    repository_owner, 
+                                                    repository_name, pull_request_id)
+        except Exception as e:
+            logger.error(f"Init ai_code_reviewer failed: {e}")
+            raise
         
-        # 初始化github assistant
-        self.github_assistant = GithubAssistant(github_token, 
-                                                repository_owner, 
-                                                repository_name, pull_request_id)
-
+        # c++ 解析器
         self._cpp_parser = None
+        # python 解析器
         self._py_parser = None
+        # 待匹配的代码行
         self.code_lines = []
+        # 待匹配的++文件的文件拓展名
         self.cpp_extensions = ('.cpp', '.h', '.hpp', '.tpp')
+        
+        logger.info("Init ai_code_reviewer success")
 
     
     @property
@@ -100,12 +85,14 @@ class CppCodeAnalyzer:
         except Exception as e:
             raise RuntimeError("Failed to initialize C++ parser") from e
 
+    
     async def close(self):
         # 实现资源释放逻辑
         await self.ai_module.close()
+        await self.github_assistant.close()
     
     
-    async def find_functions(self, node, lines, file_name):
+    async def analyze_functions(self, node, lines, file_name):
         # 获取文件变更列表行数，方便后续滤重
         self.code_lines = lines
         self.code_lines.sort()
@@ -136,7 +123,7 @@ class CppCodeAnalyzer:
                 
         # 递归地遍历子节点
         for child in node.children:
-            await self.find_functions(child, lines, file_name)
+            await self.analyze_functions(child, lines, file_name)
     
 
     # FIXME: 提取逻辑可能需要优化
@@ -171,8 +158,10 @@ class CppCodeAnalyzer:
             
             # 统一处理逻辑
             try:
+                logger.info(f"Start review file:{file_name}")
+                
                 # 异步读取文件
-                async with aiofiles.open(file_name, 'r') as f:
+                async with aiofiles.open(diff_file_struct.file_path, 'r') as f:
                     code = await f.read()
                 
                 # 语法树解析
@@ -180,7 +169,7 @@ class CppCodeAnalyzer:
                 root_node = tree.root_node
                 
                 # AST遍历
-                await self.find_functions(
+                await self.analyze_functions(
                     root_node, 
                     diff_file_struct.diff_position,
                     file_name
@@ -198,15 +187,6 @@ class CppCodeAnalyzer:
     async def analyze_code(self, diff_file_struct_list):
         await asyncio.gather(*[self.analyze(f) for f in diff_file_struct_list])
 
-
-def validate_args(args) -> Optional[int]:
-    try:
-        if args.pull_request_id <= 0:
-            raise ValueError("ID must be greater than 0")
-        return args.pull_request_id
-    except AttributeError:
-        sys.exit("Error: Missing pull_request_id parameter")
-        
         
 async def async_main(pull_request_id: int):
     analyzer = CppCodeAnalyzer(pull_request_id)
@@ -221,6 +201,17 @@ async def async_main(pull_request_id: int):
         logger.info(f"review complete")
         await analyzer.close()
         
+
+def validate_args(args) -> Optional[int]:
+    try:
+        if args.pull_request_id <= 0:
+            raise ValueError("ID must be greater than 0")
+        return args.pull_request_id
+    except AttributeError:
+        logger.error("Error: Missing pull_request_id parameter")
+        raise 
+
+        
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("pull_request_id", type=int, help="pull request id")
@@ -230,14 +221,15 @@ def main():
         if (pr_id := validate_args(args)) is None:
             return
             
+        logger.info(f"Start review pull request {pr_id}'s code")
         asyncio.run(async_main(pr_id), debug=True)
         
     except (ValueError, argparse.ArgumentError) as e:
-        print(f"parameter error: {str(e)}")
-        sys.exit(1)
+        logger.error(f"parameter error: {str(e)}")
+        raise
     except Exception as e:
-        print(f"processing error: {str(e)}")
-        sys.exit(2)
+        logger.error(f"processing error: {str(e)}")
+        raise
 
 if __name__ == "__main__":
     main()

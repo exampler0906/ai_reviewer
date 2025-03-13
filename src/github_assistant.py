@@ -9,6 +9,7 @@ from enum import Enum
 @dataclass
 class DiffFileStruct:
     file_name: str
+    file_path: str
     diff_position: list
 
 
@@ -49,19 +50,17 @@ class GithubAssistant:
         
         self.pr_base_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{self.pull_request_id}"
         
-        # 记录repository_name, 方便后续调用
-        repository_name = os.environ.get("REPOSITORY_NAME")
-        if not repository_name:
-            raise ValueError("REPOSITORY_NAME environment variable not set")
-        self.replace_prefix = f"../../{repository_name}/"
-        
         # 获取 commit SHA
         response_json =  self.call_github_api(RequestMethode.GET, self.pr_base_url)
         if "head" not in response_json or "sha" not in response_json["head"]:
             raise KeyError("Missing commit SHA in PR data")
         self.commit_sha = response_json["head"]["sha"]
-        
-        
+    
+        logger.info("Init github assistant success")
+    
+    async def close(self):
+        self._github_token = None  # 主动清除敏感数据    
+    
     # 对token进行保护
     @property
     def github_token(self) -> str:
@@ -73,9 +72,9 @@ class GithubAssistant:
         try:
             # 分页是考虑到可能应答内容过多
             if request_method == RequestMethode.GET:
-                response = requests.get(url, headers=self.headers, timeout=10, params={'per_page': 100}, json=payload)
-            elif request_method == RequestMethode.POST:
                 response = requests.get(url, headers=self.headers, timeout=10, params={'per_page': 100})
+            elif request_method == RequestMethode.POST:
+                response = requests.post(url, headers=self.headers, timeout=10, params={'per_page': 100}, json=payload)
             
             response.raise_for_status()  # 自动触发HTTPError
             response_json = response.json()
@@ -83,12 +82,13 @@ class GithubAssistant:
             return response_json
         except requests.exceptions.RequestException as e:
             logger.error(f"API request failed: {str(e)}")
+            raise
         except json.JSONDecodeError:
             logger.error("Failed to parse response JSON")
+            raise
         finally:
             if response:
-                response.close()  # 显式释放连接资源        
-        return []
+                response.close()  # 显式释放连接资源
     
      
     def get_pr_change_files(self):
@@ -127,31 +127,30 @@ class GithubAssistant:
     # 发送评论
     def add_comment(self, filename, position, comment_text):
         
-        real_file_name = filename.replace(self.replace_prefix, "", 1) if filename.startswith(self.replace_prefix) else filename
+        logger.info("Start call github api to add comment")
 
         comment_url = f"{self.pr_base_url}/comments"
         payload = {
             "body": comment_text,
             "commit_id": self.commit_sha,  # PR 的最新 commit SHA (需提前获取)
-            "path": real_file_name,
+            "path": filename,
             "position": max(position, 1) # 行数至少为1
         }
-        
         self.call_github_api(RequestMethode.POST, comment_url, payload)
 
     
     def get_diff_file_structs(self):
+        
+        logger.info("Start get pull request's change files")
         # 遍历所有文件并添加评论
         files = self.get_pr_change_files()
         diff_file_struct_list = []
-        repository_name = os.environ.get("REPOSITORY_NAME")
         
         for file in files:
             filename = file["filename"]
-            filename = f"../../{repository_name}/{filename}"
+            filepath = f"../../{self.repo}/{filename}"
             patch = file.get("patch", "")
             positions = self.get_comment_positions(patch)
-
-            diff_file_struct_list.append(DiffFileStruct(filename, positions)) 
+            diff_file_struct_list.append(DiffFileStruct(filename, filepath, positions)) 
 
         return diff_file_struct_list

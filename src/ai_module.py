@@ -3,13 +3,15 @@ from httpx import AsyncClient
 import httpx
 import json
 import os
+import aiohttp
 
 
-def read_file(file_path : str) -> any:
+def read_file(file_path : str) -> any: 
     try:
         with open(file_path, "r", encoding="utf-8") as file:
             data = json.load(file)
-        logger.info("JSON file loaded successfully:", data)
+        logger.info("JSON file loaded successfully:")
+        return data
         
     except FileNotFoundError:
         logger.error(f"Error: File {file_path} not found. Please check if the path is correct.")
@@ -22,8 +24,7 @@ def read_file(file_path : str) -> any:
         raise
     except Exception as e:
         logger.error(f"An unknown error occurred: {e}")
-        raise
-
+        raise 
 
 class DeepSeek:
     def __init__(self, url:str, key:str):
@@ -41,13 +42,16 @@ class DeepSeek:
         # 这个超时时间给的比较长是因为LLM的应答速度可能较慢
         self.client = AsyncClient(trust_env=False, proxy=None, timeout=1000)
         
-        self.prompt = {} #read_file("./promt_configure.json")
+        self.prompt = read_file("./promt_lever_configure.json")
 
         # 默认提示词为lever_0
         self.DEFAULT_PROMPT = """你是一名经验丰富的计算机工程师，请从专业的角度，对以下代码进行review，对于不完善的地方，请提出针对性的优化建议。
                                   在给出意见时请保持语言的简洁，给出对应的修改建议即可，无需给出示例代码。
                                   在review时请对内存管理、性能优化、错误处理三个方面进行重点检查。"""
-    
+
+        logger.info("Init ai model deepseek success")
+        
+        
     # 这个函数貌似没真正生效
     @property
     def api_key(self):
@@ -79,7 +83,6 @@ class DeepSeek:
                 headers=headers
             )
 
-            
             response.raise_for_status()  # 自动触发HTTPError 
             response_json = response.json()        
             return response_json
@@ -94,6 +97,8 @@ class DeepSeek:
 
 
     async def call_ai_model(self, code_content):
+        logger.info("Strat call ai model")
+        
         #主函数，调用 DeepSeek 并输出结果
         prompt_lever = os.environ.get("PROMPT_LEVER")
         if not prompt_lever in self.prompt:
@@ -107,6 +112,7 @@ class DeepSeek:
                 response = await self.call_deepseek_async(full_prompt)
             except HTTPError as e:
                 logger.error(f"Call ai model error:{str(e)}")
+                raise
             finally:
                 # 展示不处理状态码，保留原始response
                 logger.debug(f"DeepSeek Response:{response}")
