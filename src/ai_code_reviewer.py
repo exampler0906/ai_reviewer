@@ -2,54 +2,71 @@ from tree_sitter import Language, Parser
 from ai_code_reviewer_logger import logger
 from ai_module import DeepSeek
 from github_assistant import GithubAssistant
-from exception import LogError, EnvironmentVariableError, AiCodeReviewerException
+from typing import Optional
 import tree_sitter_cpp
 import tree_sitter_python
-import json
 import argparse
 import os
 import asyncio
+import bisect
+import aiofiles
+import sys
 
 
 # 获取代码内容
 def read_file(file_path, mode="read"):
+    if mode not in ("read", "lines"):
+        raise ValueError(f"Invalid pattern: {mode} (supported: 'read'/'lines')")
+
     try:
-        with open(file_path, "r", encoding="utf-8") as file:
-            if mode == "read":
+        if mode == "read":
+            with open(file_path, "r", encoding="utf-8") as file:
                 return file.read()
-            elif mode == "lines":
-                return (line for line in file)  # 生成器减少内存占用
-    except FileNotFoundError:
-        raise FileNotFoundError(f"文件不存在: {file_path}")
-    except PermissionError:
-        raise PermissionError(f"无权限访问文件: {file_path}")
+        
+        elif mode == "lines":
+            def line_generator():
+                with open(file_path, "r", encoding="utf-8") as file:
+                    yield from file
+            return line_generator()
+            
+    except FileNotFoundError as e:
+        raise FileNotFoundError("File not found: {file_path}") from e
+    except PermissionError as e:
+        raise PermissionError(f"No access permission: {file_path}") from e
     except UnicodeDecodeError as e:
-        raise ValueError(f"文件编码错误: {e}") from e
+        raise ValueError(f"Encoding error: {e}") from e
+    except IsADirectoryError as e:
+        raise IsADirectoryError(f"Path is a directory: {file_path}") from e
 
 
 class CppCodeAnalyzer:
-    def __init__(self, pull_request_id):
+    
+    require_env_vars = (
+        "LLM_API_KEY",
+        "LLM_API_URL",
+        "GITHUB_TOKEN",
+        "REPOSITORY_NAME",
+        "REPOSITORY_OWNER"
+    )
+    
+    def __init__(self, pull_request_id: int):
+        
+        # 批量校验环境变量
+        missing_vars = [var for var in self.require_env_vars 
+                       if not os.environ.get(var)]
+        if missing_vars:
+            raise RuntimeError(f":Missing environment variables: {', '.join(missing_vars)}")
+        
         # 校验日志模块是否正常启动
-        if logger == None:
-            raise LogError(2)
-
-        # 配置文件检查   
-        def environment_variable_check(variable):
-            if isinstance(variable, str):
-                value = os.environ.get(variable)
-                if value is None:
-                    raise EnvironmentVariableError(f"环境变量{variable}未设置", 3)
-                return value
-            else:
-                error_type = type(variable)
-                raise AiCodeReviewerException(f"变量类型错误:{error_type}", 4)
+        if not hasattr(logger, 'info'):
+            raise RuntimeError(f":log init error")
         
         # llm_api_key 和 github_token 需要从环境变量中拿取
-        llm_api_key = environment_variable_check("LLM_API_KEY")
-        llm_api_url = environment_variable_check("LLM_API_URL")
-        github_token = environment_variable_check("GITHUB_TOKEN")
-        repository_name = environment_variable_check("REPOSITORY_NAME")
-        repository_owner = environment_variable_check("REPOSITORY_OWNER")
+        llm_api_key = os.environ.get("LLM_API_KEY")
+        llm_api_url = os.environ.get("LLM_API_URL")
+        github_token = os.environ.get("GITHUB_TOKEN")
+        repository_name = os.environ.get("REPOSITORY_NAME")
+        repository_owner = os.environ.get("REPOSITORY_OWNER")
         
         # 初始化ai模型(目前只支持deepseek)
         self.ai_module = DeepSeek(llm_api_url, llm_api_key)
@@ -62,25 +79,32 @@ class CppCodeAnalyzer:
         self._cpp_parser = None
         self._py_parser = None
         self.code_lines = []
+        self.cpp_extensions = ('.cpp', '.h', '.hpp', '.tpp')
 
     
     @property
     def cpp_parser(self) -> Parser:
-        if not self._cpp_parser:
-            self._cpp_parser = Parser(Language(tree_sitter_cpp.language()))
-        return self._cpp_parser
-
+        try:
+            if self._cpp_parser is None:
+                self._cpp_parser = Parser(Language(tree_sitter_cpp.language()))
+            return self._cpp_parser
+        except Exception as e:
+            raise RuntimeError("Failed to initialize C++ parser") from e
     
     @property
     def py_parser(self) -> Parser:
-        if not self._py_parser:
-            self._py_parser = Parser(Language(tree_sitter_python.language()))
-        return self._py_parser
-        
+        try:
+            if self._py_parser is None:
+                self._py_parser = Parser(Language(tree_sitter_python.language()))
+            return self._py_parser
+        except Exception as e:
+            raise RuntimeError("Failed to initialize C++ parser") from e
+
+    async def close(self):
+        # 实现资源释放逻辑
+        await self.ai_module.close()
     
     
-
-
     async def find_functions(self, node, lines, file_name):
         # 获取文件变更列表行数，方便后续滤重
         self.code_lines = lines
@@ -92,76 +116,128 @@ class CppCodeAnalyzer:
             func_start_line = node.start_point[0] + 1  # start_point 是 (行, 列)，索引从 0 开始
             func_end_line = node.end_point[0] + 1
 
-            # 如果函数的某些行号在我们关心的 `lines` 列表中
-            is_processed = False
-            for line in self.code_lines:
-                if func_start_line <= line <= func_end_line:
-                    if is_processed:
-                        # 移除已经处理后的代码行，提高性能
-                        self.code_lines.remove(line)
-                        continue
-                    
-                    # 将当前函数的处理flag标记为true
-                    is_processed = True
-
-                    # 获取函数体并打印
+            # 使用二分查找快速定位范围
+            left = bisect.bisect_left(self.code_lines, func_start_line)
+            right = bisect.bisect_right(self.code_lines, func_end_line)
+            lines_to_process = self.code_lines[left:right]
+            
+            if lines_to_process:
+                try:
+                    # 业务处理
                     function_body = self.extract_function_body(node)
-                    response = await self.ai_module.call_ai_module(function_body)
-
-                    # 添加修改意见到评论
+                    response = await self.ai_module.call_ai_model(function_body)
                     self.github_assistant.add_comment(file_name, func_start_line, response)
+                except Exception as e:
+                    logger.error(f"AI processing failed: {e}")
+                    raise
 
-                    # 移除已经处理后的代码行，提高性能
-                    self.code_lines.remove(line)
+            # 批量移除已处理行（维护有序性）
+            self.code_lines = self.code_lines[:left] + self.code_lines[right:]
                 
         # 递归地遍历子节点
         for child in node.children:
             await self.find_functions(child, lines, file_name)
     
 
-    # FIXME: 提取逻辑需要进一步优化
+    # FIXME: 提取逻辑可能需要优化
     def extract_function_body(self, node):
-        """ 提取函数体的代码内容 """
         function_body = []        
         # 递归遍历子节点，提取函数体的语法内容
         for child in node.children:
-            function_body.append(child.text.decode("utf-8"))
+            text = getattr(child, "text", None)
+            if text is None:
+                continue  # 跳过无text属性的子节点
+            try:
+                # 统一处理字节类型或字符串类型
+                decoded = text.decode("utf-8", errors="replace") if isinstance(text, bytes) else str(text)
+                function_body.append(decoded)
+            except Exception as e:
+                # FIXME: 简单的跳过解码失败的项可能导致函数提取不完整
+                continue  # 跳过解码失败的项
         
         return "\n".join(function_body)
 
 
-    async def analyze_code(self, diff_file_struct_list):
-        for diff_file_struct in diff_file_struct_list:
-
-            # 进行文件过滤
-            file_name = diff_file_struct.file_name
-            if file_name.endswith(".cpp") or file_name.endswith(".h") or file_name.endswith(".hpp") or file_name.endswith(".tpp"):
-                # 解析 C++ 代码
-                cpp_code = read_file(diff_file_struct.file_name)
-                tree = self.cpp_parser.parse(bytes(cpp_code, "utf8"))
-                # 获取根节点
-                root_node = tree.root_node
-                # 开始遍历 AST
-                await self.find_functions(root_node, diff_file_struct.diff_position, diff_file_struct.file_name)
-            elif file_name.endswith(".py"):
-                py_code = read_file(diff_file_struct.file_name)
-                tree = self.py_parser.parse(bytes(py_code, "utf8"))         
-                # 获取根节点
-                root_node = tree.root_node
-                # 开始遍历 AST
-                await self.find_functions(root_node, diff_file_struct.diff_position, diff_file_struct.file_name)
-
-
-def main():
-    # 命令行参数将解析
-    parser = argparse.ArgumentParser(description="使用帮助")
-    parser.add_argument("pull_request_id", type=int, help="合并请求id（必填）")
-    args = parser.parse_args()
     
-    code_analyzer = CppCodeAnalyzer(args.pull_request_id)
-    diff_file_struct_list = code_analyzer.github_assistant.get_diff_file_structs()
-    asyncio.run(code_analyzer.analyze_code(diff_file_struct_list))
+    async def analyze(self, diff_file_struct):
+        # 进行文件过滤
+            file_name = diff_file_struct.file_name
+            if file_name.endswith(self.cpp_extensions):
+                parser = self.cpp_parser
+            elif file_name.endswith('.py'):
+                parser = self.py_parser
+            else:
+                return
+            
+            # 统一处理逻辑
+            try:
+                # 异步读取文件
+                async with aiofiles.open(file_name, 'r') as f:
+                    code = await f.read()
+                
+                # 语法树解析
+                tree = parser.parse(bytes(code, 'utf-8'))
+                root_node = tree.root_node
+                
+                # AST遍历
+                await self.find_functions(
+                    root_node, 
+                    diff_file_struct.diff_position,
+                    file_name
+                )
+                
+            except IOError as e:
+                logger.error(f"File read error:{file_name} - {str(e)}")
+            except ValueError as e:
+                logger.error(f"Parsing error{file_name} - {str(e)}")
+            except Exception as e:
+                logger.error(f"Unknow error: {file_name} - {str(e)}")
+    
+    
+    
+    async def analyze_code(self, diff_file_struct_list):
+        await asyncio.gather(*[self.analyze(f) for f in diff_file_struct_list])
 
+
+def validate_args(args) -> Optional[int]:
+    try:
+        if args.pull_request_id <= 0:
+            raise ValueError("ID must be greater than 0")
+        return args.pull_request_id
+    except AttributeError:
+        sys.exit("Error: Missing pull_request_id parameter")
+        
+        
+async def async_main(pull_request_id: int):
+    analyzer = CppCodeAnalyzer(pull_request_id)
+    try:
+        diff_files =  analyzer.github_assistant.get_diff_file_structs()
+        if not diff_files:
+            logger.warn(f"No files available for review")
+            return
+        await analyzer.analyze_code(diff_files)
+    finally:
+        # 实现资源回收的逻辑代
+        logger.info(f"review complete")
+        await analyzer.close()
+        
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("pull_request_id", type=int, help="pull request id")
+    
+    try:
+        args = parser.parse_args()
+        if (pr_id := validate_args(args)) is None:
+            return
+            
+        asyncio.run(async_main(pr_id), debug=True)
+        
+    except (ValueError, argparse.ArgumentError) as e:
+        print(f"parameter error: {str(e)}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"processing error: {str(e)}")
+        sys.exit(2)
 
 if __name__ == "__main__":
     main()

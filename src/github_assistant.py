@@ -1,7 +1,10 @@
 import requests
 import os
+import json
+import re
 from ai_code_reviewer_logger import logger
 from dataclasses import dataclass
+from enum import Enum
 
 @dataclass
 class DiffFileStruct:
@@ -9,69 +12,132 @@ class DiffFileStruct:
     diff_position: list
 
 
+class RequestMethode(Enum):
+    GET = 1
+    POST = 2
+
+
 class GithubAssistant:
-    def __init__(self, github_token, repository_owner, repository_name, pull_request_id):
-        self.github_token = github_token
+    def __init__(
+        self,
+        github_token: str,
+        repository_owner: str,
+        repository_name: str,
+        pull_request_id: int
+    ):
+        # 参数类型校验
+        if not isinstance(github_token, str) or not github_token.strip():
+            raise ValueError("github_token must be a non-empty string")
+        if not isinstance(repository_owner, str) or not repository_owner:
+            raise ValueError("repository_owner must be a non-empty string")
+        if not isinstance(repository_name, str) or not repository_name:
+            raise ValueError("repository_name must be a non-empty string")
+        if not isinstance(pull_request_id, int) or pull_request_id <= 0:
+            raise ValueError("pull_request_id must be a positive integer")
+
+        # 敏感数据设为私有属性
+        self._github_token = github_token  
         self.owner = repository_owner
         self.repo = repository_name
         self.pull_request_id = pull_request_id
-
-
-    def get_pr_change_files(self):
-        # 发送请求获取 PR 文件变更信息
-        headers = {
-            "Authorization": f"token {self.github_token}",
-            "Accept": "application/vnd.github.v3+json"
+        
+        # 设置github api 请求头
+        self.headers = {
+        "Authorization": f"token {self._github_token}",
+        "Accept": "application/vnd.github.v3+json"
         }
+        
+        self.pr_base_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{self.pull_request_id}"
+        
+        # 记录repository_name, 方便后续调用
+        repository_name = os.environ.get("REPOSITORY_NAME")
+        if not repository_name:
+            raise ValueError("REPOSITORY_NAME environment variable not set")
+        self.replace_prefix = f"../../{repository_name}/"
+        
+        # 获取 commit SHA
+        response_json =  self.call_github_api(RequestMethode.GET, self.pr_base_url)
+        if "head" not in response_json or "sha" not in response_json["head"]:
+            raise KeyError("Missing commit SHA in PR data")
+        self.commit_sha = response_json["head"]["sha"]
+        
+        
+    # 对token进行保护
+    @property
+    def github_token(self) -> str:
+        return f"****{self._github_token[-4:]}" if self._github_token else ""
+
+
+    def call_github_api(self, request_method:RequestMethode, url:str, payload:dict = {}) -> any:
+        response = None
+        try:
+            # 分页是考虑到可能应答内容过多
+            if request_method == RequestMethode.GET:
+                response = requests.get(url, headers=self.headers, timeout=10, params={'per_page': 100}, json=payload)
+            elif request_method == RequestMethode.POST:
+                response = requests.get(url, headers=self.headers, timeout=10, params={'per_page': 100})
+            
+            response.raise_for_status()  # 自动触发HTTPError
+            response_json = response.json()
+            logger.debug(f"API success response:{response_json}")
+            return response_json
+        except requests.exceptions.RequestException as e:
+            logger.error(f"API request failed: {str(e)}")
+        except json.JSONDecodeError:
+            logger.error("Failed to parse response JSON")
+        finally:
+            if response:
+                response.close()  # 显式释放连接资源        
+        return []
+    
+     
+    def get_pr_change_files(self):
         url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{self.pull_request_id}/files"
-        response = requests.get(url, headers=headers)
-        logger.debug(f"Get File Change Response:{response.json()}")
-        files = response.json()
+        return self.call_github_api(RequestMethode.GET, url)
 
-        return files
-
-
-    # 解析 patch 并找到需要评论的位置
+    
+    # FIXME:这个函数需要进一步测试其准确性
     def get_comment_positions(self, patch):
         positions = []
         patch_lines = patch.split("\n")
-        position = 0  # GitHub 的 diff 行索引
+        hunk_header_re = re.compile(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@')
+        current_new_line = None
 
         for line in patch_lines:
-            if not line.startswith('@@'):  # 跳过 diff 头部信息
-                position += 1
-            if (line.startswith("+") and not line.startswith("+++")) or (line.startswith("-") and not line.startswith("---")):# 考虑新增的行和删除的行
-                positions.append(position)
+            if line.startswith('@@'):
+                match = hunk_header_re.match(line)
+                current_new_line = int(match.group(2)) if match else None
+                continue  # 跳过块头处理
+
+            if current_new_line is None:
+                continue  # 忽略无效块后的行
+
+            if line.startswith("+"):
+                if not line.startswith("+++"):  # 排除文件头
+                    positions.append(current_new_line)
+                current_new_line += 1  # 新增行影响后续行号
+            elif line.startswith("-"):
+                pass  # 删除行不影响新文件行号
+            else:
+                current_new_line += 1  # 上下文行递增行号
+
         return positions
     
 
     # 发送评论
     def add_comment(self, filename, position, comment_text):
         
-        # 文件路径需要重新处理
-        repository_name = os.environ.get("REPOSITORY_NAME")
-        real_file_name = filename.replace(f"../../{repository_name}/", "", 1)
-        
-        # 获取 PR 的 commit ID
-        headers = {
-            "Authorization": f"token {self.github_token}",
-            "Accept": "application/vnd.github.v3+json"
-        }
-        pr_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{self.pull_request_id}"
-        pr_data = requests.get(pr_url, headers=headers).json()
-        COMMIT_ID = pr_data["head"]["sha"]
+        real_file_name = filename.replace(self.replace_prefix, "", 1) if filename.startswith(self.replace_prefix) else filename
 
-        comment_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{self.pull_request_id}/comments"
+        comment_url = f"{self.pr_base_url}/comments"
         payload = {
             "body": comment_text,
-            "commit_id": COMMIT_ID,  # PR 的最新 commit SHA (需提前获取)
+            "commit_id": self.commit_sha,  # PR 的最新 commit SHA (需提前获取)
             "path": real_file_name,
-            "position": position
+            "position": max(position, 1) # 行数至少为1
         }
         
-        response = requests.post(comment_url, headers=headers, json=payload)
-        logger.debug(f"Add Comment Response:{response.json()}")
-        return response.json()
+        self.call_github_api(RequestMethode.POST, comment_url, payload)
 
     
     def get_diff_file_structs(self):
