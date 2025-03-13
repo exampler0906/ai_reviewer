@@ -168,7 +168,7 @@ class CppCodeAnalyzer:
                 file_name = diff_file_struct.file_name
                 if self.cpp_extensions.match(file_name):
                     parser = self.cpp_parser
-                elif self.py_extensions.match(file_name):
+                elif self.python_extensions.match(file_name):
                     parser = self.py_parser
                 elif self.java_extensions.match(file_name):
                     parser = self.java_parser
