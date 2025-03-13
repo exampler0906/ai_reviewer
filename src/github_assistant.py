@@ -28,7 +28,7 @@ class GithubAssistant:
         common_function.parameter_check(github_token, "github token")
         common_function.parameter_check(repository_owner, "repository owner")
         common_function.parameter_check(repository_name, "repository name")
-        common_function.parameter_check(pull_request_id, "pull request id")
+        #common_function.parameter_check(pull_request_id, "pull request id")
         
         common_function.log_init_check()
 
