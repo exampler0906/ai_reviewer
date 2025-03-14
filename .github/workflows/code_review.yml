@@ -1,6 +1,12 @@
 name: Code Review
 
 on:
+  workflow_call:  # 允许其他仓库调用这个 Workflow
+    inputs:
+      pull_request_id:
+        description: "Pull request id"
+        required: true
+        type: int
   pull_request:
     types: [opened, synchronize, reopened]  # 触发条件：PR 创建/更新/重新打开
 
@@ -12,7 +18,7 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}  # 获取 PR 的源分支
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || 'main' }} # 获取 PR 的源分支
 
       - name: Set Python Version
         uses: actions/setup-python@v5
@@ -42,5 +48,17 @@ jobs:
             PROMPT_LEVEL : ${{ secrets.PROMPT_LEVEL }}
         run: |
           cd src
-          python ai_code_reviewer.py ${{ github.event.pull_request.number }}
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            python ai_code_reviewer.py ${{ github.event.pull_request.number }}
+          elif [[ -n "${{ github.workflow_ref }}" ]]; then
+            python ai_code_reviewer.py ${{ inputs.pull_request_id }}
+          fi
           cat app.log
+
+      - name: Archive production artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: upload log
+          path: src/app.log
+          working-directory: ./
+          retention-days: 1
