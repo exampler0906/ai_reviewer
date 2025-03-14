@@ -1,8 +1,8 @@
 from ai_code_reviewer_logger import logger
 
 # 参数校验
-def parameter_check(item, item_name):
-    if not isinstance(item, str) or not item.strip():
+def parameter_check(item : any, item_name : str):
+    if not (isinstance(item, str) and item.strip()):
         raise ValueError(f"{item_name} must be a non-empty string")
     
 # 校验日志模块是否正常启动

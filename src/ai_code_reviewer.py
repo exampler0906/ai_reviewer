@@ -23,7 +23,7 @@ class CppCodeAnalyzer:
         "GITHUB_TOKEN",
         "REPOSITORY_NAME",
         "REPOSITORY_OWNER",
-        "PROMPT_LEVER"
+        "PROMPT_LEVEL"
     )
     
     # 待匹配的++文件的文件拓展名
@@ -75,33 +75,33 @@ class CppCodeAnalyzer:
     
     @property
     def cpp_parser(self) -> Parser:
-        if self._cpp_parser is None:
-            try:
-                with self.lock: # 多线程安全
+        try:
+            with self.lock: # 多线程安全
+                if self._cpp_parser is None:
                     self._cpp_parser = Parser(Language(tree_sitter_cpp.language()))
-            except Exception as e:
-                raise RuntimeError("Failed to initialize C++ parser:{e}") from e
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize C++ parser:{e}") from e
         return self._cpp_parser
     
     @property
     def py_parser(self) -> Parser:
-        if self._py_parser is None:
-            try:
-                with self.lock:
+        try:
+            with self.lock:
+                if self._py_parser is None:
                     self._py_parser = Parser(Language(tree_sitter_python.language()))
-            except Exception as e:
-                raise RuntimeError("Failed to initialize Python parser:{e}") from e
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize Python parser:{e}") from e
         return self._py_parser
 
     
     @property
     def java_parser(self) -> Parser:
-        if self._java_parser is None:
-            try:
-                with self.lock:
+        try:
+            with self.lock:
+                if self._java_parser is None:
                     self._java_parser = Parser(Language(tree_sitter_java.language()))
-            except Exception as e:
-                raise RuntimeError("Failed to initialize JAVA parser:{e}") from e
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize JAVA parser:{e}") from e
         return self._java_parser
     
     
@@ -111,7 +111,8 @@ class CppCodeAnalyzer:
     
     
     async def analyze_functions(self, node, lines, file_name):
-
+        new_lines = lines
+        
         # 检查当前节点是否为函数定义
         if node.type == "function_definition":
             # 获取函数的开始和结束行
@@ -119,9 +120,9 @@ class CppCodeAnalyzer:
             func_end_line = node.end_point[0] + 1
 
             # 使用二分查找快速定位范围
-            left = bisect.bisect_left(self.code_lines, func_start_line)
-            right = bisect.bisect_right(self.code_lines, func_end_line)
-            lines_to_process = self.code_lines[left:right]
+            left = bisect.bisect_left(new_lines, func_start_line)
+            right = bisect.bisect_right(new_lines, func_end_line)
+            lines_to_process = new_lines[left:right]
             
             if lines_to_process:
                 try:
@@ -130,7 +131,7 @@ class CppCodeAnalyzer:
                     response = await self.ai_module.call_ai_model(function_body)
                     self.github_assistant.add_comment(file_name, func_start_line, response)
                 except Exception as e:
-                    logger.exception(f"AI processing failed: {e}")
+                    logger.exception(f"AI processing failed:{e}")
                     raise
 
             # 批量移除已处理行（维护有序性）
@@ -197,15 +198,15 @@ class CppCodeAnalyzer:
                     )
                     
                 except IOError as e:
-                    logger.exception(f"File read error:{file_name} - {str(e)}")
+                    logger.exception(f"File read error:{file_name}, error: {e}")
                 except ValueError as e:
-                    logger.exception(f"Parsing error{file_name} - {str(e)}")                    
+                    logger.exception(f"Parsing error{file_name}, error: {e}")                    
             except Exception as e:
-                logger.exception(f"Unknow error: {file_name} - {str(e)}")
+                logger.exception(f"Unknown error: error: {file_name}, error: {e}")
     
     
     async def analyze_code(self, diff_file_struct_list):
-        await asyncio.gather(*[self.analyze(f) for f in diff_file_struct_list])
+        await asyncio.gather(*[self.analyze(f) for f in diff_file_struct_list], return_exceptions=True)
 
         
 async def async_main(pull_request_id: int):
@@ -213,11 +214,11 @@ async def async_main(pull_request_id: int):
     try:
         diff_files =  analyzer.github_assistant.get_diff_file_structs()
         if not diff_files:
-            logger.warn(f"No files available for review")
+            logger.warning(f"No files available for review")
             return
         await analyzer.analyze_code(diff_files)
     except Exception as e:
-        logger.exception(f"Unknow error: {e}")
+        logger.exception(f"Unknown error:{e}")
         raise
     finally:
         await analyzer.close()
@@ -246,10 +247,10 @@ def main():
         asyncio.run(async_main(pr_id), debug=True)
         
     except (ValueError, argparse.ArgumentError) as e:
-        logger.exception(f"parameter error: {str(e)}")
+        logger.exception(f"parameter error:{e}")
         raise
     except Exception as e:
-        logger.exception(f"processing error: {str(e)}")
+        logger.exception(f"processing error:{e}")
         raise
 
 if __name__ == "__main__":

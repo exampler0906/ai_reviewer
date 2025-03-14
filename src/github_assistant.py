@@ -52,16 +52,17 @@ class GithubAssistant:
     
         logger.info("Init github assistant success")
     
+    
     async def close(self):
         self._github_token = None  # 主动清除敏感数据    
+    
     
     # 对token进行保护
     @property
     def github_token(self) -> str:
-        if len(self._github_token) > 10:
+        if self._github_token is not None and len(self._github_token) > 10:
             return f"****{self._github_token[-4:]}" if self._github_token else None
         return None
-        
 
 
     # 懒加载，需要时再获取
@@ -84,10 +85,12 @@ class GithubAssistant:
                 logger.debug(f"API success response:{response_json}")
                 return response_json
         except requests.exceptions.RequestException as e:
-            logger.exception(f"API request failed: {str(e)}")
+            logger.exception(f"API request failed:{e}")
             raise
         except requests.exceptions.JSONDecodeError:
             logger.exception("Failed to parse response JSON")
+        except Exception as e:
+            logger.exception("Unknown error:{e}")
             raise
         
     
@@ -110,7 +113,9 @@ class GithubAssistant:
                 try:
                     current_new_line = int(match.group(2)) if match else logger.error("Hunk header analyze failed:{line}")
                 except ValueError as e:
-                    logger.expection("Value error:{e}")
+                    logger.exception("Value error:{e}")
+                except Exception as e:
+                    logger.exception("Unknown error:{e}")
                 continue  # 跳过块头处理
             
             if current_new_line is None:
