@@ -3,10 +3,30 @@ name: Code Review
 on:
   workflow_call:  # 允许其他仓库调用这个 Workflow
     inputs:
-      pull_request_id:
-        description: "Pull request id"
+      PULL_REQUEST_ID:
         required: true
-        type: int
+        type: number
+      COMMIT_ID:
+        required: true
+        type: number
+      LLM_API_KEY:
+        required: true
+        type: string
+      LLM_API_URL:
+        required: true
+        type: string
+      GITHUB_TOKEN:
+        required: true
+        type: string
+      REPOSITORY_NAME:
+        required: true
+        type: string
+      REPOSITORY_OWNER:
+        required: true
+        type: string
+      PROMPT_LEVEL:
+        required: true
+        type: string
   pull_request:
     types: [opened, synchronize, reopened]  # 触发条件：PR 创建/更新/重新打开
 
@@ -15,11 +35,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout PR branch
+      - name: Checkout Ai Code Reviewer Code
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || 'main' }} # 获取 PR 的源分支
 
+      - name:  Checkout Changes Code
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.REPOSITORY_OWNER }}/${{ inputs.REPOSITORY_NAME }}
+          token: ${{ inputs.GITHUB_TOKEN }}  # 需要有权限的 Token
+          path: ../
+          ref: main  # 可选：指定分支/标签/commit SHA
+      
       - name: Set Python Version
         uses: actions/setup-python@v5
         with:
@@ -40,18 +69,18 @@ jobs:
 
       - name: Code Review
         env:
-            LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-            LLM_API_URL: ${{ secrets.LLM_API_URL }}
-            GITHUB_TOKEN: ${{ secrets.THIS_GITHUB_TOKEN }}
-            REPOSITORY_NAME: ${{ secrets.REPOSITORY_NAME }}
-            REPOSITORY_OWNER: ${{ secrets.REPOSITORY_OWNER }}
-            PROMPT_LEVEL : ${{ secrets.PROMPT_LEVEL }}
+            LLM_API_KEY: ${{ github.event_name == 'pull_request' && secrets.LLM_API_KEY || inputs.LLM_API_KEY }}
+            LLM_API_URL: ${{ github.event_name == 'pull_request' && secrets.LLM_API_URL || inputs.LLM_API_URL }}
+            GITHUB_TOKEN: ${{ github.event_name == 'pull_request' && secrets.GITHUB_TOKEN || inputs.GITHUB_TOKEN }}
+            REPOSITORY_NAME: ${{ github.event_name == 'pull_request' && secrets.REPOSITORY_NAME || inputs.REPOSITORY_NAME }}
+            REPOSITORY_OWNER: ${{ github.event_name == 'pull_request' && secrets.REPOSITORY_OWNER || inputs.REPOSITORY_OWNER }}
+            PROMPT_LEVEL : ${{ github.event_name == 'pull_request' && secrets.PROMPT_LEVEL || inputs.PROMPT_LEVEL }}
         run: |
           cd src
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             python ai_code_reviewer.py ${{ github.event.pull_request.number }}
           elif [[ -n "${{ github.workflow_ref }}" ]]; then
-            python ai_code_reviewer.py ${{ inputs.pull_request_id }}
+            python ai_code_reviewer.py ${{ inputs.PULL_REQUEST_ID }}
           fi
           cat app.log
 
