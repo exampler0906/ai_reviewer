@@ -1,0 +1,46 @@
+name: Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]  # 触发条件：PR 创建/更新/重新打开
+
+jobs:
+  code_review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}  # 获取 PR 的源分支
+
+      - name: Set Python Version
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.7'
+
+      - name: Set Pip Cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Requirement
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Code Review
+        env:
+            LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+            LLM_API_URL: ${{ secrets.LLM_API_URL }}
+            GITHUB_TOKEN: ${{ secrets.THIS_GITHUB_TOKEN }}
+            REPOSITORY_NAME: ${{ secrets.REPOSITORY_NAME }}
+            REPOSITORY_OWNER: ${{ secrets.REPOSITORY_OWNER }}
+            PROMPT_LEVEL : ${{ secrets.PROMPT_LEVEL }}
+        run: |
+          cd src
+          python ai_code_reviewer.py ${{ github.event.pull_request.number }}
+          cat app.log

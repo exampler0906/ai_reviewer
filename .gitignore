@@ -1,0 +1,3 @@
+# ignore file
+*/__pycache__/*
+*/app.log
