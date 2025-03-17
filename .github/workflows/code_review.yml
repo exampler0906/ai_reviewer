@@ -59,7 +59,7 @@ jobs:
       - name: Install Requirement
         run: |
           python -m pip install --upgrade pip
-          ll ../
+          ls ../
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             pip install -r requirements.txt
           elif [[ -n "${{ github.workflow_ref }}" ]]; then
