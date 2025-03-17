@@ -8,7 +8,7 @@ on:
         type: number
       COMMIT_ID:
         required: true
-        type: number
+        type: string
     secrets:
       LLM_API_KEY:
         required: true
