@@ -9,6 +9,19 @@ on:
       COMMIT_ID:
         required: true
         type: number
+    secrets:
+      LLM_API_KEY:
+        required: true
+      LLM_API_URL:
+        required: true
+      GITHUB_TOKEN:
+        required: true
+      REPOSITORY_NAME:
+        required: true
+      REPOSITORY_OWNER:
+        required: true
+      PROMPT_LEVEL:
+        required: true
   pull_request:
     types: [opened, synchronize, reopened]  # 触发条件：PR 创建/更新/重新打开
 
