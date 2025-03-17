@@ -79,7 +79,7 @@ class GithubAssistant:
 
     def call_github_api(self, request_method:str, url:str, payload:dict = None) -> any:
         try:
-            with requests.request(request_method, url, headers=self.headers, timeout=10, params={'per_page': 100}, json=payload) as response:
+            with requests.request(request_method, url, headers=self.headers, timeout=10, json=payload) as response:
                 response.raise_for_status()  # 自动触发HTTPError
                 response_json = response.json()
                 logger.debug(f"API success response:{response_json}")
