@@ -42,6 +42,7 @@ jobs:
       - name: Checkout AI Code Reviewer Code
         uses: actions/checkout@v4
         with:
+          repository: exampler0906/ai_reviewer
           ref: ${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
           path: code/ai_reviewer
       
