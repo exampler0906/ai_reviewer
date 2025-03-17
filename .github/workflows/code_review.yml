@@ -29,7 +29,6 @@ jobs:
           ref: ${{ github.head_ref }}
 
       - name:  Checkout AI Code Reviewer Code
-        if: ${{ github.workflow_ref != '' }}
         uses: actions/checkout@v4
         with:
           repository: exampler0906/ai_reviewer
