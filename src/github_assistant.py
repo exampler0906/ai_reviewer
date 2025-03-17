@@ -137,7 +137,7 @@ class GithubAssistant:
     def add_comment(self, filename, position, comment_text):
         
         logger.info("Start call github api to add comment")
-        logger.info(f"self.commit_sha")
+        logger.info(f"{self.commit_sha}")
         
         comment_url = f"{self.pr_base_url}/comments"
         payload = {
