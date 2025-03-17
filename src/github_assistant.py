@@ -137,11 +137,12 @@ class GithubAssistant:
     def add_comment(self, filename, position, comment_text):
         
         logger.info("Start call github api to add comment")
-
+        logger.info(f"self.commit_sha")
+        
         comment_url = f"{self.pr_base_url}/comments"
         payload = {
             "body": comment_text,
-            "commit_id": self.commit_sha,  # PR 的最新 commit SHA (需提前获取)
+            "commit_id": self._commit_sha,  # PR 的最新 commit SHA (需提前获取)
             "path": filename,
             "position": max(position, 1) # 行数至少为1
         }
