@@ -2,6 +2,13 @@ name: Code Review
 
 on:
   workflow_call:  # 允许其他仓库调用这个 Workflow
+    inputs:
+      PULL_REQUEST_ID:
+        required: true
+        type: number
+      COMMIT_ID:
+        required: true
+        type: string
     secrets:
       LLM_API_KEY:
         required: true
@@ -23,17 +30,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Change Code
+      - name:  Checkout Reviewer Code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
-
-      - name:  Checkout AI Code Reviewer Code
-        uses: actions/checkout@v4
-        with:
-          repository: exampler0906/ai_reviewer
+          repository: ${{ secrets.REPOSITORY_OWNER }}/${{ secrets.REPOSITORY_NAME }}
           token: ${{ secrets.THIS_GITHUB_TOKEN }}  # 需要有权限的 Token
           ref: main
+          path: code/${{ secrets.REPOSITORY_NAME }}
+          
+      - name: Checkout AI Code Reviewer Code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: code/ai_reviewer
       
       - name: Set Python Version
         uses: actions/setup-python@v5
@@ -50,9 +59,9 @@ jobs:
 
       - name: Install Requirement
         run: |
-          python -m pip install --upgrade pip
           ls ../
           ls -a
+          python -m pip install --upgrade pip
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             pip install -r requirements.txt
           elif [[ -n "${{ github.workflow_ref }}" ]]; then
