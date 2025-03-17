@@ -158,7 +158,7 @@ class GithubAssistant:
         for file in files:
             if "filename" in file:
                 filename = file.get("filename")
-                filepath = f"../../{self.repo}/{filename}"
+                filepath = f"../../{filename}"
                 patch = file.get("patch", "")
                 positions = self.get_comment_positions(patch)
                 diff_file_struct_list.append(DiffFileStruct(filename, filepath, positions)) 
