@@ -76,7 +76,7 @@ jobs:
         run: |
           cd code/ai_reviewer/src
           echo "LOG_PATH=code/ai_reviewer/src/app.log" >> $GITHUB_ENV
-          python ai_code_reviewer.py ${{ inputs.PULL_REQUEST_ID }}
+          python ai_code_reviewer.py ${{ github.workflow_ref != '' && inputs.PULL_REQUEST_ID || github.event.pull_request.number }}
 
       - name: Archive production artifacts
         uses: actions/upload-artifact@v4
