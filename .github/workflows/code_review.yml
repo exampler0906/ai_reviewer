@@ -43,6 +43,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: exampler0906/ai_reviewer
+          token: ${{ secrets.THIS_GITHUB_TOKEN }}  # 需要有权限的 Token
           ref: ${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
           path: code/ai_reviewer
       
