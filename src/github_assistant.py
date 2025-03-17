@@ -40,8 +40,9 @@ class GithubAssistant:
         
         # 设置github api 请求头
         self.headers = {
-        "Authorization": f"token {self._github_token}",
-        "Accept": "application/vnd.github.v3+json"
+        "Authorization": f"Bearer {self._github_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version":"2022-11-28"
         }
         
         self.pr_base_url = f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{self.pull_request_id}"
@@ -86,6 +87,7 @@ class GithubAssistant:
                 return response_json
         except requests.exceptions.RequestException as e:
             logger.exception(f"API request failed:{e}")
+            print(response)
             raise
         except requests.exceptions.JSONDecodeError:
             logger.exception("Failed to parse response JSON")
@@ -135,18 +137,14 @@ class GithubAssistant:
 
     # 发送评论
     def add_comment(self, filename, position, comment_text):
-        
-        logger.info("Start call github api to add comment")
-        logger.info(f"{self.commit_sha}")
-        logger.info(f"{filename}")
-        logger.info(f"{position}")
-        
         comment_url = f"{self.pr_base_url}/comments"
+        
         payload = {
             "body": comment_text,
-            "commit_id": self._commit_sha,  # PR 的最新 commit SHA (需提前获取)
+            "commit_id": self.commit_sha,  # PR 的最新 commit SHA (需提前获取)
             "path": filename,
-            "position": max(position, 1) # 行数至少为1
+            "side":"RIGHT", # 暂时只关注新增行
+            "line": position 
         }
         self.call_github_api("POST", comment_url, payload)
 

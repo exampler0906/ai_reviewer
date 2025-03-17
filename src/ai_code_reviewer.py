@@ -129,7 +129,8 @@ class CppCodeAnalyzer:
                     # 业务处理
                     function_body = self.extract_function_body(node)
                     response = await self.ai_module.call_ai_model(function_body)
-                    self.github_assistant.add_comment(file_name, func_start_line, response)
+                    # 将 comments 添加到该函数变更的第一行 
+                    self.github_assistant.add_comment(file_name, next(iter(lines_to_process), None), response)
                 except Exception as e:
                     logger.exception(f"AI processing failed:{e}")
                     raise
