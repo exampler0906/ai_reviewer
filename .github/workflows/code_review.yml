@@ -62,9 +62,6 @@ jobs:
 
       - name: Install Requirement
         run: |
-          ls ./ -a
-          ls code -a
-          ls code/ai_reviewer -a
           python -m pip install --upgrade pip
           pip install -r code/ai_reviewer/requirements.txt
 
