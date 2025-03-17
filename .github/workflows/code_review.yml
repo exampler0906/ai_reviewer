@@ -44,7 +44,7 @@ jobs:
         with:
           repository: exampler0906/ai_reviewer
           token: ${{ secrets.THIS_GITHUB_TOKEN }}  # 需要有权限的 Token
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
+          ref: ${{ github.workflow_ref != '' &&  'main' || github.head_ref }}
           path: code/ai_reviewer
       
       - name: Set Python Version
