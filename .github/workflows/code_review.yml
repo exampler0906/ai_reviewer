@@ -76,8 +76,10 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
            cd src
+           echo "LOG_PATH=src/app.log" >> $GITHUB_ENV
           elif [[ -n "${{ github.workflow_ref }}" ]]; then
             cd ../ai_reviewer/src
+            echo "LOG_PATH=../ai_reviewer/src/app.log" >> $GITHUB_ENV
           fi
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             python ai_code_reviewer.py ${{ github.event.pull_request.number }}
@@ -90,6 +92,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: upload log
-          path: src/app.log
+          path: ${{ env.LOG_PATH }}
           working-directory: ./
           retention-days: 1
