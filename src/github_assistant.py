@@ -138,6 +138,7 @@ class GithubAssistant:
         
         logger.info("Start call github api to add comment")
         logger.info(f"{self.commit_sha}")
+        logger.info(f"{filename}")
         
         comment_url = f"{self.pr_base_url}/comments"
         payload = {
