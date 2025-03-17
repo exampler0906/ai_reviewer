@@ -74,6 +74,7 @@ jobs:
             cd ai_reviewer/src
             echo "LOG_PATH=ai_reviewer/src/app.log" >> $GITHUB_ENV
           fi
+          ls -a ../../
           python ai_code_reviewer.py ${{ github.event.pull_request.number }}
 
       - name: Archive production artifacts
