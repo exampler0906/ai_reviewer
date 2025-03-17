@@ -32,7 +32,7 @@ jobs:
         if: ${{ github.workflow_ref != '' }}
         uses: actions/checkout@v4
         with:
-          repository: exampler0906/ai_reviewe
+          repository: exampler0906/ai_reviewer
           token: ${{ secrets.THIS_GITHUB_TOKEN }}  # 需要有权限的 Token
           ref: main  # 可选：指定分支/标签/commit SHA
       
