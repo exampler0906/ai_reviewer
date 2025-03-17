@@ -35,6 +35,7 @@ jobs:
           repository: exampler0906/ai_reviewer
           token: ${{ secrets.THIS_GITHUB_TOKEN }}  # 需要有权限的 Token
           ref: main  # 可选：指定分支/标签/commit SHA
+          path: ai_reviewer
       
       - name: Set Python Version
         uses: actions/setup-python@v5
@@ -56,7 +57,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             pip install -r requirements.txt
           elif [[ -n "${{ github.workflow_ref }}" ]]; then
-            pip install -r ai_reviewer/requirements.txt
+            pip install -r ../ai_reviewer/requirements.txt
           fi
 
       - name: Code Review
