@@ -59,8 +59,11 @@ jobs:
       - name: Install Requirement
         run: |
           python -m pip install --upgrade pip
-          ls -a
-          pip install -r requirements.txt
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            pip install -r requirements.txt
+          elif [[ -n "${{ github.workflow_ref }}" ]]; then
+            pip install -r ../ai_reviewer/requirements.txt
+          fi
 
       - name: Code Review
         env:
@@ -71,8 +74,11 @@ jobs:
             REPOSITORY_OWNER: ${{ secrets.REPOSITORY_OWNER }}
             PROMPT_LEVEL : ${{ secrets.PROMPT_LEVEL }}
         run: |
-          pwd
-          cd src
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+           cd src
+          elif [[ -n "${{ github.workflow_ref }}" ]]; then
+            cd ../ai_reviewer/src
+          fi
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             python ai_code_reviewer.py ${{ github.event.pull_request.number }}
           elif [[ -n "${{ github.workflow_ref }}" ]]; then
