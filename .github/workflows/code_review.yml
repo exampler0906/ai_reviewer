@@ -2,13 +2,6 @@ name: Code Review
 
 on:
   workflow_call:  # 允许其他仓库调用这个 Workflow
-    inputs:
-      PULL_REQUEST_ID:
-        required: true
-        type: number
-      COMMIT_ID:
-        required: true
-        type: string
     secrets:
       LLM_API_KEY:
         required: true
@@ -30,16 +23,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Ai Code Reviewer Code
+      - name: Checkout Change Code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || 'main' }} # 获取 PR 的源分支
+          ref: ${{ github.head_ref }}
 
-      - name:  Checkout Changes Code
-        if: ${{ github.event_name == 'pull_request' }}
+      - name:  Checkout AI Code Reviewer Code
+        if: ${{ -n "${{ github.workflow_ref }}" }}
         uses: actions/checkout@v4
         with:
-          repository: ${{ secrets.REPOSITORY_OWNER }}/${{ secrets.REPOSITORY_NAME }}
+          repository: exampler0906/ai_reviewe
           token: ${{ secrets.THIS_GITHUB_TOKEN }}  # 需要有权限的 Token
           ref: main  # 可选：指定分支/标签/commit SHA
       
@@ -63,7 +56,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             pip install -r requirements.txt
           elif [[ -n "${{ github.workflow_ref }}" ]]; then
-            pip install -r ../ai_reviewer/requirements.txt
+            pip install -r ai_reviewer/requirements.txt
           fi
 
       - name: Code Review
@@ -79,15 +72,10 @@ jobs:
            cd src
            echo "LOG_PATH=src/app.log" >> $GITHUB_ENV
           elif [[ -n "${{ github.workflow_ref }}" ]]; then
-            cd ../ai_reviewer/src
-            echo "LOG_PATH=../ai_reviewer/src/app.log" >> $GITHUB_ENV
+            cd ai_reviewer/src
+            echo "LOG_PATH=ai_reviewer/src/app.log" >> $GITHUB_ENV
           fi
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            python ai_code_reviewer.py ${{ github.event.pull_request.number }}
-          elif [[ -n "${{ github.workflow_ref }}" ]]; then
-            python ai_code_reviewer.py ${{ inputs.PULL_REQUEST_ID }}
-          fi
-          cat app.log
+          python ai_code_reviewer.py ${{ github.event.pull_request.number }}
 
       - name: Archive production artifacts
         uses: actions/upload-artifact@v4
