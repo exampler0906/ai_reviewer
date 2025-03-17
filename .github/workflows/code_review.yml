@@ -32,16 +32,17 @@ jobs:
     steps:
       - name:  Checkout Reviewer Code
         uses: actions/checkout@v4
+        if: ${{ github.workflow_ref != '' }}
         with:
           repository: ${{ secrets.REPOSITORY_OWNER }}/${{ secrets.REPOSITORY_NAME }}
           token: ${{ secrets.THIS_GITHUB_TOKEN }}  # 需要有权限的 Token
-          ref: main
+          ref: ${{ inputs.COMMIT_ID }}
           path: code/${{ secrets.REPOSITORY_NAME }}
           
       - name: Checkout AI Code Reviewer Code
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
           path: code/ai_reviewer
       
       - name: Set Python Version
@@ -59,14 +60,8 @@ jobs:
 
       - name: Install Requirement
         run: |
-          ls ../
-          ls -a
           python -m pip install --upgrade pip
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            pip install -r requirements.txt
-          elif [[ -n "${{ github.workflow_ref }}" ]]; then
-            pip install -r ai_reviewer/requirements.txt
-          fi
+          pip install -r code/ai_reviewer/requirements.txt
 
       - name: Code Review
         env:
@@ -77,15 +72,9 @@ jobs:
             REPOSITORY_OWNER: ${{ secrets.REPOSITORY_OWNER }}
             PROMPT_LEVEL : ${{ secrets.PROMPT_LEVEL }}
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-           cd src
-           echo "LOG_PATH=src/app.log" >> $GITHUB_ENV
-          elif [[ -n "${{ github.workflow_ref }}" ]]; then
-            cd ai_reviewer/src
-            echo "LOG_PATH=ai_reviewer/src/app.log" >> $GITHUB_ENV
-          fi
-          ls -a ../../${{ secrets.REPOSITORY_NAME }}
-          python ai_code_reviewer.py ${{ github.event.pull_request.number }}
+          cd code/ai_reviewer/src
+          echo "LOG_PATH=code/ai_reviewer/src/app.log" >> $GITHUB_ENV
+          python ai_code_reviewer.py ${{ inputs.PULL_REQUEST_ID }}
 
       - name: Archive production artifacts
         uses: actions/upload-artifact@v4
