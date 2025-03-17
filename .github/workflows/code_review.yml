@@ -41,7 +41,6 @@ jobs:
         with:
           repository: ${{ secrets.REPOSITORY_OWNER }}/${{ secrets.REPOSITORY_NAME }}
           token: ${{ secrets.THIS_GITHUB_TOKEN }}  # 需要有权限的 Token
-          path: ../
           ref: main  # 可选：指定分支/标签/commit SHA
       
       - name: Set Python Version
@@ -71,6 +70,7 @@ jobs:
             REPOSITORY_OWNER: ${{ secrets.REPOSITORY_OWNER }}
             PROMPT_LEVEL : ${{ secrets.PROMPT_LEVEL }}
         run: |
+          pwd
           cd src
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             python ai_code_reviewer.py ${{ github.event.pull_request.number }}
