@@ -14,7 +14,7 @@ on:
         required: true
       LLM_API_URL:
         required: true
-      GITHUB_TOKEN:
+      THIS_GITHUB_TOKEN:
         required: true
       REPOSITORY_NAME:
         required: true
@@ -39,8 +39,8 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         uses: actions/checkout@v4
         with:
-          repository: ${{ inputs.REPOSITORY_OWNER }}/${{ inputs.REPOSITORY_NAME }}
-          token: ${{ inputs.GITHUB_TOKEN }}  # 需要有权限的 Token
+          repository: ${{ secrets.REPOSITORY_OWNER }}/${{ secrets.REPOSITORY_NAME }}
+          token: ${{ secrets.THIS_GITHUB_TOKEN }}  # 需要有权限的 Token
           path: ../
           ref: main  # 可选：指定分支/标签/commit SHA
       
@@ -66,7 +66,7 @@ jobs:
         env:
             LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
             LLM_API_URL: ${{ secrets.LLM_API_URL }}
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            GITHUB_TOKEN: ${{ secrets.THIS_GITHUB_TOKEN }}
             REPOSITORY_NAME: ${{ secrets.REPOSITORY_NAME }}
             REPOSITORY_OWNER: ${{ secrets.REPOSITORY_OWNER }}
             PROMPT_LEVEL : ${{ secrets.PROMPT_LEVEL }}
