@@ -113,8 +113,13 @@ class CppCodeAnalyzer:
     async def analyze_functions(self, node, lines, file_name):
         new_lines = lines
         
+        # python 和 c++ 的function node name 不同
+        function_node_name = "function_definition"
+        if file_name.endswith(".java"):
+            function_node_name = "method_declaration"
+
         # 检查当前节点是否为函数定义
-        if node.type == "function_definition":
+        if node.type == function_node_name:
             # 获取函数的开始和结束行
             func_start_line = node.start_point[0] + 1  # start_point 是 (行, 列)，索引从 0 开始
             func_end_line = node.end_point[0] + 1
@@ -238,6 +243,8 @@ def validate_args(args) -> int:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("pull_request_id", type=int, help="pull request id")
+    parser.add_argument("--debug", type=bool, help="debug mode", required=False)
+    
     
     try:
         args = parser.parse_args()
@@ -245,7 +252,11 @@ def main():
             return
             
         logger.info(f"Start review pull request {pr_id}'s code")
-        asyncio.run(async_main(pr_id), debug=True)
+        
+        if hasattr(args, 'debug') and args.debug:
+            asyncio.run(async_main(pr_id), debug=True)
+        else:
+            asyncio.run(async_main(pr_id))
         
     except (ValueError, argparse.ArgumentError) as e:
         logger.exception(f"parameter error:{e}")
