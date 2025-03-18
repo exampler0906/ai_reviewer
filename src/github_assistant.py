@@ -83,11 +83,11 @@ class GithubAssistant:
             with requests.request(request_method, url, headers=self.headers, timeout=10, json=payload) as response:
                 response.raise_for_status()  # 自动触发HTTPError
                 response_json = response.json()
-                logger.debug(f"API success response:{response_json}")
+                logger.info(f"API success response, url:{url}, request_method:{request_method}")
+                logger.debug(f"response json:{response_json}")
                 return response_json
         except requests.exceptions.RequestException as e:
             logger.exception(f"API request failed:{e}")
-            print(response)
             raise
         except requests.exceptions.JSONDecodeError:
             logger.exception("Failed to parse response JSON")

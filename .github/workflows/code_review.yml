@@ -9,6 +9,9 @@ on:
       COMMIT_ID:
         required: true
         type: string
+      SELF_HOSTED:
+        required: true
+        type: string
     secrets:
       LLM_API_KEY:
         required: true
@@ -27,7 +30,7 @@ on:
 
 jobs:
   code_review:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.workflow_ref != '' && inputs.SELF_HOSTED || 'ubuntu-latest' }}
 
     steps:
       - name:  Checkout Reviewer Code
