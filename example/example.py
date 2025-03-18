@@ -6,7 +6,6 @@ def quick_sort(arr):
     left = [x for x in arr if x < pivot]  # 小于 pivot 的元素
     middle = [x for x in arr if x == pivot]  # 等于 pivot 的元素
     right = [x for x in arr if x > pivot]  # 大于 pivot 的元素
-    
 
     return quick_sort(left) + middle + quick_sort(right)
 

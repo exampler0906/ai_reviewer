@@ -32,7 +32,6 @@ int main() {
     vector<int> arr = {3, 6, 8, 10, 1, 2, 1};
     quickSort(arr, 0, arr.size() - 1);
 
-    
     cout << "Sorted array: ";
     for (int num : arr) {
         cout << num << " ";
