@@ -5,23 +5,17 @@
 ai_reviewer 是一款基于 **LLM（大语言模型）** 的代码自动化审查工具，它与 **GitHub** 的 **Pull Request** 流程无缝结合，提供了类似人工代码审核的体验。
 
 ![image-20250319101800089](image/review_result.png)
-
-
-
-
-
-## 🌟 主要特点
+  
+  
+  ## 🌟 主要特点
 
 ✅ **支持国产大语言模型**：目前兼容 **DeepSeek API**。
 
 ✅ **多语言审查能力**：支持 **Python、Java、C++** 代码的自动化审核。
 
 ✅ **更精准的审核建议**：代码变更将以 **函数级别** 递交给大语言模型，以获取更准确的审核意见。
-
-
-
-
-
+  
+  
 ## 🏁 快速开始（Quick Start）
 
 ### 1️⃣ **基于 GitHub Actions 部署**
@@ -62,19 +56,13 @@ jobs:
 | `PROMPT_LEVEL`      | 审查提示词等级，范围 `0-3`，数值越高，审查意见越详细         |
 
 **步骤 3** *️⃣运行 GitHub Actions，审查结果将在 **Artifacts** 中生成完整日志。
-
-
-
-
-
+  
+  
 ## 🔄 工作流示意图
 
 ![workflow](image/workflow.png)
-
-
-
-
-
+  
+  
 ## 📌 待优化功能（To Do List）
 
 🔹 **优化 Prompt**
