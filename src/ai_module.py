@@ -83,7 +83,7 @@ class DeepSeek:
         }
         
         payload = {
-            "model": "deepseek-r1-250120",
+            "model": "deepseek-r1-250528",
             "messages": [{"role": "user", "content": prompt}]
         }
 
